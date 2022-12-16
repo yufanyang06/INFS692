@@ -1,0 +1,300 @@
+---
+title: "infs 692 m3"
+output:
+  pdf_document: default
+date: "2022-12-16"
+---
+
+---
+## Data entry
+```{r}
+library(readr)
+df<- read.csv("/Users/yangyufan/Desktop/infs 692 final project/radiomics_completedata.csv")
+```
+
+## Packages
+```{r}
+library(dplyr)  
+library(ggplot2)     
+library(stringr)   
+library(gridExtra)
+library(tidyverse)
+library(cluster)
+library(factoextra)
+library(mclust)
+```
+
+## Data prepreation 
+```{r}
+summary(df)
+```
+
+```{r}
+df <- na.omit(df)
+```
+
+```{r}
+head(df)
+```
+
+## K MEANS
+separate training data and lables
+```{r}
+x_train <- data.matrix(df[-2])
+label <- df[2]
+```
+## Standardizaztion
+```{r}
+x_train <- scale(x_train)
+summary(x_train)
+```
+## start at 2 clusters
+```{r}
+k2 <- kmeans(x_train, centers = 2, nstart = 25)
+str(k2)
+```
+##plot the 2 clusters
+```{r}
+fviz_cluster(k2, data = x_train)
+```
+## get the each clsuter's data
+```{r}
+k3 <- kmeans(x_train, centers = 3, nstart = 25)
+k4 <- kmeans(x_train, centers = 4, nstart = 25)
+k5 <- kmeans(x_train, centers = 5, nstart = 25)
+```
+# plots to compare
+```{r}
+p1 <- fviz_cluster(k2, geom = "point", data = x_train) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = x_train) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = x_train) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = x_train) + ggtitle("k = 5")
+
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+##Determining Optimal Number of Clusters
+```{r}
+set.seed(123)
+```
+
+#function to compute total within-cluster sum of square 
+```{r}
+wss <- function(k) {
+  kmeans(x_train, k, nstart = 10)$tot.withinss
+}
+```
+## Compute and plot wss for k = 1 to k = 15
+```{r}
+k.values <- 1:15
+```
+## extract wss for 2-15 clusters
+```{r}
+wss_values <- map_dbl(k.values, wss)
+
+plot(k.values, wss_values,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+```
+
+## compute gap statistic
+```{r}
+set.seed(123)
+gap_stat <- clusGap(x_train, FUN = kmeans, nstart = 25,
+                    K.max = 10, B = 50)
+```
+## Print the result
+```{r}
+print(gap_stat, method = "firstmax")
+
+fviz_gap_stat(gap_stat)
+```
+## Compute k-means clustering with k = 2
+```{r}
+set.seed(123)
+final <- kmeans(x_train, 2, nstart = 25)
+print(final)
+```
+## final data
+```{r}
+fviz_cluster(final, data = x_train)
+```
+
+
+## Hierarchical
+## For reproducibility
+```{r}
+set.seed(123)
+```
+## Dissimilarity matrix
+```{r}
+d <- dist(x_train, method = "euclidean")
+```
+## Hierarchical clustering using Complete Linkage
+```{r}
+hc1 <- hclust(d, method = "complete" )
+```
+## For reproducibility
+```{r}
+set.seed(123)
+```
+## Compute maximum or complete linkage clustering with agnes
+```{r}
+hc2 <- agnes(x_train, method = "complete")
+```
+## Agglomerative coefficient
+```{r}
+hc2$ac
+```
+##[1] 0.8488437
+# methods to assess
+```{r}
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+```
+## function to compute coefficient
+```{r}
+ac <- function(x) {
+  agnes(x_train, method = x)$ac
+}
+```
+# get agglomerative coefficient for each linkage method
+```{r}
+purrr::map_dbl(m, ac)
+```
+##  average    single  complete      ward 
+##0.7618315 0.7097208 0.8488437 0.9655196 
+
+# compute divisive hierarchical clustering
+```{r}
+hc4 <- diana(x_train)
+```
+# Divise coefficient; amount of clustering structure found
+```{r}
+hc4$dc
+```
+##[1] 0.8427741
+
+## Plot cluster results
+```{r}
+p1 <- fviz_nbclust(x_train, FUN = hcut, method = "wss", 
+                   k.max = 10) +
+  ggtitle("(A) Elbow method")
+p2 <- fviz_nbclust(x_train, FUN = hcut, method = "silhouette", 
+                   k.max = 10) +
+  ggtitle("(B) Silhouette method")
+p3 <- fviz_nbclust(x_train, FUN = hcut, method = "gap_stat", 
+                   k.max = 10) +
+  ggtitle("(C) Gap statistic")
+```
+# Display plots side by side
+```{r}
+gridExtra::grid.arrange(p1, p2, p3, nrow = 1)
+```
+# Construct dendorgram 
+```{r}
+hc5 <- hclust(d, method = "ward.D2" )
+dend_plot <- fviz_dend(hc5)
+dend_data <- attr(dend_plot, "dendrogram")
+dend_cuts <- cut(dend_data, h = 6)
+fviz_dend(dend_cuts$upper[[1]])
+```
+## Ward's method
+```{r}
+hc5 <- hclust(d, method = "ward.D2" )
+```
+# Cut tree into 4 groups
+```{r}
+sub_grp <- cutree(hc5, k = 2)
+```
+## Number of members in each cluster
+```{r}
+table(sub_grp)
+```
+## Plot full dendogram
+```{r}
+fviz_dend(
+  hc5,
+  k = 2,
+  horiz = TRUE,
+  rect = TRUE,
+  rect_fill = TRUE,
+  rect_border = "jco",
+  k_colors = "jco",
+  cex = 0.1
+)
+```
+## create full dendogram
+```{r}
+dend_plot <- fviz_dend(hc5)
+```
+## extract plot info
+```{r}
+dend_data <- attr(dend_plot, "dendrogram") 
+```
+## cut the dendogram
+```{r}
+dend_cuts <- cut(dend_data, h = 70.5)  
+```
+## designated height
+## Create sub dendrogram plots
+```{r}
+p1 <- fviz_dend(dend_cuts$lower[[1]])
+p2 <- fviz_dend(dend_cuts$lower[[1]], type = 'circular')
+```
+## Side by side plots
+```{r}
+gridExtra::grid.arrange(p1, p2, nrow = 1)
+```
+
+##Model-based 
+# Apply GMM model 
+```{r}
+df1_mc <- Mclust(x_train)
+summary(df1_mc)
+```
+
+## Observations with high uncertainty
+```{r eval=FALSE}
+plot(df1_mc, what = 'BIC', 
+     legendArgs = list(x = "bottomright", ncol = 5))
+
+probabilities <- df1_mc$z 
+
+probabilities <- probabilities %>%
+  as.data.frame() %>%
+  mutate(id = row_number()) %>%
+  tidyr::gather(cluster, probability, -id)
+
+ggplot(probabilities, aes(probability)) +
+  geom_histogram() +
+  facet_wrap(~ cluster, nrow = 2)
+
+uncertainty <- data.frame(
+  id = 1:nrow(x_train),
+  cluster = df1_mc$classification,
+  uncertainty = df1_mc$uncertainty
+)
+
+uncertainty %>%
+  group_by(cluster) %>%
+  filter(uncertainty > 0.0001) %>%
+  ggplot(aes(uncertainty, reorder(id, uncertainty))) +
+  geom_point() +
+  facet_wrap(~ cluster, scales = 'free_y', nrow = 1)
+
+
+cluster2 <- x_train %>%
+  scale() %>%
+  as.data.frame() %>%
+  mutate(cluster = df1_mc$classification) %>%
+  filter(cluster == 2) %>%
+  select(-cluster)
+
+cluster2 %>%
+  tidyr::gather(product, std_count) %>%
+  group_by(product) %>%
+  summarize(avg = mean(std_count)) %>%
+  ggplot(aes(avg, reorder(product, avg))) +
+  geom_point() +
+  labs(x = "Average standardized consumption", y = NULL)

@@ -1,0 +1,188 @@
+---
+title: "INFS692 Final Project M1"
+output: pdf_document
+date: "2022-12-15"
+---
+
+## Model 1
+##data entry
+
+```{r}
+library(readr)
+df<- read.csv("/Users/yangyufan/Desktop/infs 692 final project/radiomics_completedata.csv")
+```
+## Packages
+```{r}
+library(caret) 
+library(dplyr)    
+library(ggplot2) 
+library(rsample) 
+library(keras)
+library(h2o)
+library(rpart)  
+library(rpart.plot)
+library(vip)    
+library(ROCR)      
+library(pROC) 
+```
+## Data preperation
+
+
+```{r }
+data_check <- na.omit(data)
+```
+
+```{r}
+dim(df)
+```
+## Split data
+
+```{r}
+set.seed(123)
+prep_df <- df %>% mutate_if(is.ordered, factor, ordered = FALSE)
+df_split <- initial_split(prep_df, prop = .8, strata = "Failure.binary")
+df_train <- training(df_split)
+df_test  <- testing(df_split)
+```
+## knn
+```{r eval=FALSE}
+blueprint <- recipe(Failure.binary ~ ., data = df_train) %>%
+  step_other(all_nominal(), threshold = 0.005)
+
+h2o.init()
+train_h2o <- prep(blueprint, training = df_train, retain = TRUE) %>%
+  juice() %>%
+  as.h2o()
+test_h2o <- prep(blueprint, training = df_train) %>%
+  bake(new_data = df_test) %>%
+  as.h2o()
+```
+##resampling method
+```{r }
+cv <- trainControl(
+  method = "repeatedcv", 
+  number = 10, 
+  repeats = 5,
+  classProbs = TRUE,                 
+  summaryFunction = twoClassSummary)
+```
+## Create a hyperparameter grid search
+```{r }
+hyper_grid <- expand.grid(
+  k = floor(seq(1, nrow(df_train)/3, length.out = 20))
+)
+```
+## Fit knn model and perform grid search
+```{r eval=FALSE }
+knn_grid <- train(
+  blueprint_attr, 
+  data = df_train, 
+  method = "knn", 
+  trControl = cv, 
+  tuneGrid = hyper_grid,
+  metric = "ROC"
+)
+
+ggplot(knn_grid)
+```
+
+
+```{r eval=FALSE }
+varimpo <- varImp(knn_grid)
+varimpo
+```
+## print auc value during training
+```{r eval=FALSE}
+knngrid_prob <- predict(knn_grid, df_train, type = "prob")$Yes
+roc(df_train$Failure.binary ~ knngrid_prob, plot=TRUE, legacy.axes=FALSE, 
+    percent=TRUE, col="black", lwd=2, print.auc=TRUE)
+title(main = "Model Performance during Training", line = 2.5)
+```
+## top 20 importance
+```{r eval=FALSE}
+ggplot(varimpo)
+```
+## print auc during testing
+```{r eval=FALSE}
+knngrid_probtest <- predict(knn_grid, df_test, type = "prob")$Yes
+roc(df_test$Failure.binary ~ knngrid_probtest, plot=TRUE, legacy.axes=FALSE, 
+    percent=TRUE, col="black", lwd=2, print.auc=TRUE)
+title(main = "Model Performance during Testing", line = 2.5)
+```
+## Decision Tree
+## auc in testing
+```{r eval=FALSE}
+tree_attri_fit <- rpart(Failure.binary~., data = df_test, method = 'class')
+
+m1_prob <- predict(tree_attri_fit, df_test, type = "prob")
+
+perf1 <- prediction(m1_prob[,2], df_test$failure.binary) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+plot(perf1, col = "black", lty = 2)
+
+roc(df_test$failure.binary ~ m1_prob[,2], plot=TRUE, legacy.axes=FALSE, 
+    percent=TRUE, col="black", lwd=2, print.auc=TRUE)
+```
+## auc in training
+```{r eval=FALSE}
+tree_attri_fit2 <- rpart(Failure.binary~., data = df_train, method = 'class')
+
+m2_prob <- predict(tree_attri_fit2, df_train, type = "prob")
+
+perf2 <- prediction(m2_prob[,2], df_train$Failure.binary) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+plot(perf2, col = "black", lty = 2)
+
+roc(df_train$Failure.binary ~ m2_prob[,2], plot=TRUE, legacy.axes=FALSE, 
+    percent=TRUE, col="black", lwd=2, print.auc=TRUE)
+```
+## logistic regression
+```{r eval=FALSE}
+dim(df)
+
+set.seed(123)
+cv_model1 <- train(
+  Failure.binary ~ ., 
+  data = df_train, 
+  method = "glm",
+  family = "binomial",
+  trControl = trainControl(method = "cv", number = 10)
+)
+```
+
+```{r eval=FALSE}
+pred_class_1 <- predict(cv_model1, df_train)
+```
+
+```{r eval=FALSE}
+confusionMatrix(
+  data = relevel(pred_class_1, ref = "Yes"),
+  reference = relevel(df_train$Failure.binary, ref = "Yes")
+)
+```
+## Compute probabilities
+```{r eval=FALSE}
+m1_prob <- predict(cv_model1, df_train, type = "prob")$Yes
+```
+# Compute AUC metrics (training)
+```{r eval=FALSE}
+perf1 <- prediction(m1_prob, df_train$Failure.binary) %>% 
+  performance(measure = "tpr", x.measure = "fpr")
+title(main = "Model Performance during Training", line = 2.5)
+```
+
+# Compute predicted probabilities on test data
+```{r eval=FALSE}
+m1_prob <- predict(cv_model1, df_test, type = "prob")$Yes
+```
+# Compute AUC metrics (testing)
+```{r eval=FALSE}
+perf1 <- prediction(m1_prob, df_test$Failure.binary) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+```
+#roc
+```{r eval=FALSE}
+roc(df_test$Failure.binary ~ m1_prob, plot=TRUE, legacy.axes=FALSE, 
+    percent=TRUE, col="black", lwd=2, print.auc=TRUE)
+title(main = "Model Performance during Testing", line = 2.5)
+```
